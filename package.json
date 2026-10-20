@@ -1,0 +1,24 @@
+{
+  "name": "openclaw-cloudflare-clef",
+  "version": "0.1.0",
+  "description": "Decision provider plugin for OpenClaw: run decision evaluations on Cloudflare Workers AI CLEF / CLEF Flash (free-tier friendly, SecretRef-only credentials, SSRF-guarded fetch).",
+  "license": "MIT",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.10.4"
+    },
+    "build": {
+      "openclawVersion": "2026.10.4"
+    }
+  },
+  "scripts": {
+    "test": "node --test protocol.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

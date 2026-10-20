@@ -1,0 +1,108 @@
+{
+  "id": "cloudflare-clef",
+  "name": "Cloudflare CLEF decisions",
+  "version": "0.1.0",
+  "description": "Typed decision provider for Cloudflare Workers AI CLEF and CLEF Flash.",
+  "contracts": {
+    "decisionProviders": [
+      "cloudflare-clef"
+    ]
+  },
+  "decisionModels": [
+    {
+      "provider": "cloudflare-clef",
+      "id": "clef-flash",
+      "name": "Cloudflare CLEF Flash",
+      "capabilities": {
+        "questionTypes": [
+          "boolean",
+          "choice",
+          "score"
+        ],
+        "maxQuestions": 64,
+        "maxChoiceAlternatives": 255,
+        "maxScoreLevels": 10,
+        "requiresBooleanCriteria": false,
+        "confidence": "provider-specific"
+      }
+    },
+    {
+      "provider": "cloudflare-clef",
+      "id": "clef",
+      "name": "Cloudflare CLEF",
+      "capabilities": {
+        "questionTypes": [
+          "boolean",
+          "choice",
+          "score"
+        ],
+        "maxQuestions": 64,
+        "maxChoiceAlternatives": 255,
+        "maxScoreLevels": 10,
+        "requiresBooleanCriteria": false,
+        "confidence": "provider-specific"
+      }
+    }
+  ],
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "apiToken",
+          "expected": "string",
+          "ownerKind": "capability"
+        }
+      ]
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accountId": {
+        "type": "string",
+        "pattern": "^[a-fA-F0-9]{32}$"
+      },
+      "apiToken": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "store"
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "provider",
+              "id"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "uiHints": {
+    "accountId": {
+      "label": "Cloudflare Account ID"
+    },
+    "apiToken": {
+      "label": "Cloudflare Workers AI API Token",
+      "sensitive": true
+    }
+  }
+}
