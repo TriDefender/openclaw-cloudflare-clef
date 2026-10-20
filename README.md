@@ -52,6 +52,23 @@ openclaw secrets store set CLOUDFLARE_API_TOKEN --kind secret \
 
 缺少凭据时不设置 decisionModel，保留当前行为。
 
+## 模型切换（clef / clef-flash）
+
+两个模型均已注册，切换只改一处。默认跟随 `agents.defaults.decisionModel`（推荐 clef-flash）：
+
+```bash
+# 用大模型 CLEF（更强，21,818 Neurons / M input tokens）
+openclaw config set plugins.entries.cloudflare-clef.config.model clef
+
+# 用 CLEF Flash（更快更便宜，3,455 Neurons / M input tokens）
+openclaw config set plugins.entries.cloudflare-clef.config.model clef-flash
+
+# 取消固定，恢复跟随 decisionModel 的模型选择
+openclaw config unset plugins.entries.cloudflare-clef.config.model
+```
+
+`config.model` 设置后对本 provider 的所有评测生效，优先级高于 decisionModel 里的模型选择；改动需 `openclaw plugins reload cloudflare-clef` 后生效。评测结果中的 `model` 字段始终回报实际调用的模型（API 回显校验，不会错报）。
+
 **激活**：配置完成后重启网关，让插件以就绪凭据完成注册。若插件注册早于凭据入库，capability owner 会进入 degraded，`secrets reload` / `plugins reload` 均无法清除（实测），必须重启网关。
 
 依赖宿主运行时提供的 openclaw/plugin-sdk，无需随包安装依赖。

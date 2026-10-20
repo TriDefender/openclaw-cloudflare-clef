@@ -1,7 +1,7 @@
 {
   "id": "cloudflare-clef",
   "name": "Cloudflare CLEF decisions",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Typed decision provider for Cloudflare Workers AI CLEF and CLEF Flash.",
   "contracts": {
     "decisionProviders": [
@@ -59,6 +59,14 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "model": {
+        "type": "string",
+        "enum": [
+          "clef",
+          "clef-flash"
+        ],
+        "description": "Model toggle: use this CLEF model for every decision evaluation (clef = stronger, clef-flash = faster/cheaper). Omit to follow the consumer's selected decision model."
+      },
       "accountId": {
         "type": "string",
         "pattern": "^[a-fA-F0-9]{32}$"
@@ -97,6 +105,9 @@
     }
   },
   "uiHints": {
+    "model": {
+      "label": "Model toggle (clef or clef-flash); omit to follow the selected decision model"
+    },
     "accountId": {
       "label": "Cloudflare Account ID"
     },

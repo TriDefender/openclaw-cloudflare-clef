@@ -11,6 +11,9 @@ export default {
   register(api) {
     const cfg = api.pluginConfig ?? {};
     const accountId = typeof cfg.accountId === "string" ? cfg.accountId : "";
+    // Model toggle: when config.model is a supported id, it overrides the
+    // model selected by the consumer's decisionModel for every evaluation.
+    const modelOverride = cfg.model === "clef" || cfg.model === "clef-flash" ? cfg.model : "";
     const unavailable = (reason,extra={}) => ({status:"unavailable",reason,...extra});
     api.registerDecisionProvider({
       id:ID,
@@ -32,8 +35,9 @@ export default {
       async evaluate(batch,context) {
         context.signal.throwIfAborted();
         if (!/^[a-fA-F0-9]{32}$/.test(accountId)) return unavailable("credentials-unavailable");
+        const model = modelOverride || context.model;
         let request;
-        try { request = encodeBatch(batch,context.model); }
+        try { request = encodeBatch(batch,model); }
         catch (e) { if (e instanceof UnsupportedInput) return unavailable("unsupported-input"); throw e; }
         let response, release, authorityError;
         try {
@@ -43,7 +47,7 @@ export default {
           const remaining = Math.floor(context.deadlineMonotonicMs - performance.now());
           if (remaining <= 0) { context.signal.throwIfAborted(); throw new Error("Decision deadline"); }
           const fetched = await fetchWithSsrFGuard({
-            url:"https://api.cloudflare.com/client/v4/accounts/" + accountId + "/ai/run/@cf/cloudflare/" + context.model,
+            url:"https://api.cloudflare.com/client/v4/accounts/" + accountId + "/ai/run/@cf/cloudflare/" + model,
             requireHttps:true,maxRedirects:0,capture:false,
             timeoutMs:remaining,signal:context.signal,
             beforeRequest() {
