@@ -1,7 +1,7 @@
 {
   "id": "cloudflare-clef",
   "name": "Cloudflare CLEF decisions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed decision provider for Cloudflare Workers AI CLEF and CLEF Flash.",
   "contracts": {
     "decisionProviders": [
