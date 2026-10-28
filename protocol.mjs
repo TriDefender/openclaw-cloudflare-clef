@@ -11,9 +11,37 @@ export function encodeBatch(batch, model) {
     throw new UnsupportedInput("Unsupported model or questions");
   const entries = Object.entries(batch.questions);
   if (!entries.length || entries.length > 64) throw new UnsupportedInput("CLEF accepts 1–64 questions");
+  // CLEF takes images only via its top-level "images" array (data URLs or
+  // {content_type,base64} items; PNG/JPEG/WebP, max 4). OpenClaw's decision
+  // contract has no image channel, so callers may embed data URLs anywhere in
+  // state/instructions/criteria. Extract them all here and leave a textual
+  // placeholder so the model can tie each image back to its context.
+  const images = [];
+  const transform = (x) => {
+    if (typeof x === "string") {
+      const t = x.trim();
+      if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=\s]+$/.test(t)) {
+        images.push(t);
+        return "[image #" + images.length + "]";
+      }
+      return x;
+    }
+    if (Array.isArray(x)) return x.map(transform);
+    if (x !== null && typeof x === "object") {
+      if (typeof x.content_type === "string" && typeof x.base64 === "string") {
+        images.push({content_type:x.content_type, base64:x.base64});
+        return "[image #" + images.length + "]";
+      }
+      const o = Object.create(null);
+      for (const k of Object.keys(x)) o[k] = transform(x[k]);
+      return o;
+    }
+    return x;
+  };
   const questions = Object.create(null), mapping = [];
   let alternatives = 0;
-  for (const [id,q] of entries) {
+  for (const [id,qRaw] of entries) {
+    const q = transform(qRaw);
     const wireId = "q" + mapping.length;
     const instructions = q.instructions ?? (
       q.type === "boolean" ? "Does the supplied state satisfy the true criterion rather than the false criterion?" :
@@ -37,7 +65,8 @@ export function encodeBatch(batch, model) {
       mapping.push({id,wireId,q}); alternatives += q.criteria.length;
     } else throw new UnsupportedInput("Unsupported question type");
   }
-  const payload = {model,state:batch.state,questions};
+  const payload = {model,state:transform(batch.state),questions};
+  if (images.length) payload.images = images;
   const body = JSON.stringify(payload);
   // Conservative admission guard: one UTF-8 byte per token plus per-rubric
   // headroom. Reject oversized evidence rather than rely on CLEF truncation.

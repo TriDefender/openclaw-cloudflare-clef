@@ -54,3 +54,18 @@ test("round-trips untrusted map keys without object prototype mutation",()=>{
  assert.equal(Object.getPrototypeOf(r.answers),null);
  assert.equal(Object.prototype.polluted,undefined);
 });
+
+test("extracts embedded data-URL images into the CLEF images array with placeholders",()=>{
+  const url="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+  const b={state:{pic:url,nested:{imgs:[url,{content_type:"image/jpeg",base64:"Zm9v"}]}},
+    questions:{q1:{type:"boolean",criteria:{true:"yes",false:"no"}}}};
+  const req=encodeBatch(b,"clef-flash");
+  assert.equal(req.payload.images.length,3);
+  assert.equal(req.payload.state.pic,"[image #1]");
+  assert.equal(req.payload.state.nested.imgs[0],"[image #2]");
+  assert.equal(req.payload.state.nested.imgs[1],"[image #3]");
+  assert.ok(!("images" in req.payload) === false);
+  // no images -> no images key on the wire
+  const plain=encodeBatch({state:"x",questions:{q1:{type:"boolean",criteria:{true:"y",false:"n"}}}},"clef-flash");
+  assert.equal("images" in plain.payload,false);
+});
