@@ -101,6 +101,59 @@
             ]
           }
         ]
+      },
+      "dailyNeuronCap": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100000000,
+        "description": "Optional local cap on Neurons spent by this plugin per UTC day (Cloudflare's free allocation is 10,000/day, shared with other Workers AI usage). Requests that would exceed it return unavailable/rate-limited until 00:00 UTC. Omit to disable."
+      },
+      "redact": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Optional redaction of decision evidence before it is sent to Cloudflare. Matches are replaced with stable per-request placeholders such as [ip-1].",
+        "properties": {
+          "privateIps": {
+            "type": "boolean",
+            "description": "Replace private, loopback, link-local and CGNAT IPv4 addresses and private IPv6 addresses."
+          },
+          "emails": {
+            "type": "boolean",
+            "description": "Replace e-mail addresses."
+          },
+          "patterns": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pattern": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "flags": {
+                      "type": "string",
+                      "pattern": "^[imsu]*$"
+                    }
+                  },
+                  "required": [
+                    "pattern"
+                  ]
+                }
+              ]
+            },
+            "description": "Extra JavaScript regular expressions (strings, or {pattern, flags}) whose matches are replaced with [redacted-N]."
+          }
+        }
       }
     }
   },
@@ -114,6 +167,12 @@
     "apiToken": {
       "label": "Cloudflare Workers AI API Token",
       "sensitive": true
+    },
+    "dailyNeuronCap": {
+      "label": "Daily Neuron cap (UTC day, optional)"
+    },
+    "redact": {
+      "label": "Redact evidence before sending (optional)"
     }
   }
 }
