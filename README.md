@@ -1,36 +1,42 @@
-# Cloudflare CLEF 决策适配器
+# Cloudflare CLEF decisions for OpenClaw
 
-OpenClaw decision-provider 插件，用 Cloudflare Workers AI CLEF 系列模型做决策评测，不替换聊天主模型。
-提供 cloudflare-clef/clef-flash（默认建议）和 cloudflare-clef/clef。
+[简体中文](README.zh-CN.md)
 
-## 安装
+An OpenClaw **decision-provider** plugin that runs typed decision evaluations on
+Cloudflare Workers AI **CLEF** and **CLEF Flash**. It does not replace your chat
+model; it answers OpenClaw's boolean / choice / score rubrics with calibrated
+probabilities, usually in a few hundred milliseconds.
+
+Models: `cloudflare-clef/clef-flash` (recommended default) and `cloudflare-clef/clef`.
+
+## Install
 
 ```bash
 openclaw plugins install clawhub:openclaw-cloudflare-clef
 ```
 
-从源码手动安装：把插件目录放到任意路径，并在下方配置中加 `"load": {"paths": ["<插件目录>"]}`（用 `plugins install` 安装则无需 `load.paths`）。
+From source: put the plugin directory anywhere and add
+`"load": {"paths": ["<plugin dir>"]}` to the `plugins` config below
+(not needed when installed with `plugins install`).
 
-## 配置前置（Cloudflare 侧）
+## Cloudflare setup
 
-1. **Account ID**：Cloudflare 仪表盘 → Workers & Pages 概览页右侧，32 位十六进制。
-2. **创建 API Token**：仪表盘右上角用户头像 → My Profile → API Tokens → Create Token，权限选 **Workers AI → Run**（作用域限定到你的账户）。
-3. **Token 入库**（插件只接受 SecretRef：不缓存 API Token，不读环境变量，无明文回退；值走 stdin 避免进 shell 历史）：
+1. **Account ID**: Cloudflare dashboard → Workers & Pages overview, right-hand
+   side (32 hex characters).
+2. **API token**: avatar → My Profile → API Tokens → Create Token, permission
+   **Workers AI → Run**, scoped to your account.
+3. **Store the token** (the plugin only accepts a SecretRef: no environment
+   variables, no plaintext fallback; the value goes through stdin so it stays out
+   of shell history):
 
 ```bash
 openclaw secrets store set CLOUDFLARE_API_TOKEN --kind secret \
   --allow-host api.cloudflare.com --value-file -
 ```
 
-## 费用
+## Configuration
 
-- 建议 Workers Free：10,000 Neurons/UTC 日免费，用尽后平台硬限制。
-- Workers Paid 同样有免费量，但超额收费；本插件不改变账户套餐，不保证 Paid 账户零支出。
-- 免费量与账户内其他 Workers AI 用量共享。
-- 2026-10-20 官方价：CLEF Flash 3,455 Neurons / M input tokens；
-  CLEF 21,818 Neurons / M input tokens。仅按输入计价。
-
-## 配置（合并到现有配置，保留其余插件）
+Merge into your existing config:
 
 ```json
 {
@@ -41,59 +47,132 @@ openclaw secrets store set CLOUDFLARE_API_TOKEN --kind secret \
         "enabled": true,
         "config": {
           "accountId": "<Cloudflare Account ID>",
-          "apiToken": {"source":"store","provider":"default","id":"CLOUDFLARE_API_TOKEN"}
+          "apiToken": {"source": "store", "provider": "default", "id": "CLOUDFLARE_API_TOKEN"},
+          "dailyNeuronCap": 8000,
+          "redact": {"privateIps": true, "emails": true}
         }
       }
     }
   },
-  "agents": {"defaults": {"decisionModel":"cloudflare-clef/clef-flash"}}
+  "agents": {"defaults": {"decisionModel": "cloudflare-clef/clef-flash"}}
 }
 ```
 
-缺少凭据时不设置 decisionModel，保留当前行为。
+Leave `decisionModel` unset until credentials are in place.
 
-## 模型切换（clef / clef-flash）
+| Option | Description |
+|---|---|
+| `accountId` | Cloudflare account ID (required). |
+| `apiToken` | SecretRef to a Workers AI token (required). |
+| `model` | Optional toggle `clef` or `clef-flash`. Overrides the model chosen in `decisionModel` for every evaluation. |
+| `dailyNeuronCap` | Optional local cap on Neurons spent per UTC day. See [Cost control](#cost-control). |
+| `redact` | Optional redaction of evidence before it leaves the host. See [Redaction](#redaction). |
 
-两个模型均已注册，切换只改一处。默认跟随 `agents.defaults.decisionModel`（推荐 clef-flash）：
+**Activation**: restart the Gateway after configuring so the plugin registers
+with ready credentials. If the plugin registered before the secret was stored,
+the capability owner stays degraded and neither `secrets reload` nor
+`plugins reload` clears it; only a Gateway restart does.
+
+## Switching models
 
 ```bash
-# 用大模型 CLEF（更强，21,818 Neurons / M input tokens）
-openclaw config set plugins.entries.cloudflare-clef.config.model clef
-
-# 用 CLEF Flash（更快更便宜，3,455 Neurons / M input tokens）
-openclaw config set plugins.entries.cloudflare-clef.config.model clef-flash
-
-# 取消固定，恢复跟随 decisionModel 的模型选择
-openclaw config unset plugins.entries.cloudflare-clef.config.model
+openclaw config set plugins.entries.cloudflare-clef.config.model clef        # stronger
+openclaw config set plugins.entries.cloudflare-clef.config.model clef-flash  # faster, ~6x cheaper
+openclaw config unset plugins.entries.cloudflare-clef.config.model           # follow decisionModel
 ```
 
-`config.model` 设置后对本 provider 的所有评测生效，优先级高于 decisionModel 里的模型选择；改动需 `openclaw plugins reload cloudflare-clef` 后生效。评测结果中的 `model` 字段始终回报实际调用的模型（API 回显校验，不会错报）。
+Apply with `openclaw plugins reload cloudflare-clef`. The `model` field of each
+result always reports the model that actually answered (checked against the API echo).
 
-**激活**：配置完成后重启网关，让插件以就绪凭据完成注册。若插件注册早于凭据入库，capability owner 会进入 degraded，`secrets reload` / `plugins reload` 均无法清除（实测），必须重启网关。
+## Cost control
 
-依赖宿主运行时提供的 openclaw/plugin-sdk，无需随包安装依赖。
+- Workers Free: 10,000 Neurons per UTC day, hard-limited by Cloudflare.
+- Workers Paid: the same free allocation, then **usage above it is billed**.
+  The free allocation is shared with all other Workers AI usage on the account.
+- Prices (2026-10-20), input tokens only: CLEF Flash 3,455 Neurons / M tokens;
+  CLEF 21,818 Neurons / M tokens.
 
-## 翻译与边界
+Set `dailyNeuronCap` to stop this plugin before it spends more than you want:
 
-- boolean -> noul -> probabilityTrue；choice 保留全部概率；score 的索引对象转数组。
-- 重新映射问题与选项 ID，允许中文、斜杠等 OpenClaw 标识，恢复结果原 ID。
-- 使用主机 guarded fetch、取消信号、剩余 deadline 和最终同步 isAdmissible 检查。
-- 无重试、无后台轮询、无收费模型自动回退；429 返回 unavailable。
-- 仅支持文本/JSON 决策证据。当前主机 DecisionBatch 无图像字段，不宣称支持视觉。
-- 保守输入预算：请求 UTF-8 字节数 + 1,024 + 每候选 128 不得超过 24,000；
-  这是接入侧近似保护，不是厂商 tokenizer 的精确计算。
-- 当前内置自动工具预筛选预算为 500ms；远程网络调用可能超时并走原有回退。
-- Codex 运行时不使用该内置自动筛选；是否暴露显式 decision_evaluate 取决于活动 harness。
+- Before each request the plugin reserves a conservative estimate (one token per
+  UTF-8 byte of the request, at the selected model's rate). After a successful
+  call the reservation is replaced with the cost of the reported
+  `usage.input_tokens`.
+- If a request would cross the cap, the plugin returns
+  `unavailable / rate-limited` without any network call, and OpenClaw keeps its
+  normal fallback behaviour until 00:00 UTC.
+- Rejected requests (HTTP 4xx/5xx) and requests that were never sent release
+  their reservation; a lost connection keeps it, because the call may have been billed.
+- The counter lives in OpenClaw's SQLite plugin state, survives restarts and is
+  shared by concurrent evaluations. It only counts calls made by this plugin,
+  so leave headroom if the same account runs other Workers AI models.
+- If the host cannot provide plugin state, or the cap is invalid, the provider
+  reports not ready and refuses every evaluation (fails closed).
 
-## 验证
+## Redaction
 
-`node --test protocol.test.mjs` 仅验证协议转换和拒绝异常响应；不等于已通过线上鉴权。
+Decision evidence often contains internal hostnames, IP addresses or e-mail
+addresses. `redact` replaces them before the request is built:
 
-端到端验证：配好并重启网关后，在会话中调用 `decision_evaluate` 工具发一条真实评测——返回 `status: "ok"` 且带 `answers` 即打通；返回 `unavailable / credentials-unavailable` 说明凭据未就绪（多为插件注册早于凭据入库的 degraded，见上文激活一节）。
+```json
+"redact": {
+  "privateIps": true,
+  "emails": true,
+  "patterns": ["acme-internal-[a-z0-9-]+", {"pattern": "project falcon", "flags": "i"}]
+}
+```
 
-## 来源
+- `privateIps`: RFC 1918, loopback, link-local and CGNAT IPv4; unique-local,
+  link-local and loopback IPv6. Public addresses are kept.
+- `emails`: e-mail addresses.
+- `patterns`: up to 32 JavaScript regular expressions (string, or
+  `{pattern, flags}` with flags from `imsu`). Patterns that match the empty
+  string or fail to compile make the provider refuse evaluations.
+
+Matches become placeholders such as `[ip-1]`, `[email-1]`, `[redacted-1]`.
+Within one request the same value always gets the same placeholder, so the
+model can still tell two hosts apart. Redaction covers `state`, question
+`instructions`, criteria text and choice labels. Question IDs and choice keys
+returned to OpenClaw are unchanged. Embedded images are not inspected.
+
+Redaction is pattern-based and best effort. Do not rely on it to make secrets
+safe to send; keep credentials out of decision evidence entirely.
+
+## Behaviour and limits
+
+- boolean → CLEF `noul` → `probabilityTrue`; choice keeps the full probability
+  distribution; score turns CLEF's indexed object into an array.
+- Question and choice IDs are remapped on the wire, so OpenClaw IDs with
+  non-ASCII characters or slashes work; results come back under the original IDs.
+- Uses the host's SSRF-guarded fetch, the cancellation signal, the remaining
+  deadline and a final synchronous `isAdmissible` check before sending.
+- No retries, no background polling, no automatic fallback to paid models.
+  HTTP 429 returns `unavailable / rate-limited`.
+- Images: data URLs (PNG/JPEG/WebP) or `{content_type, base64}` objects embedded
+  in state, instructions or criteria are moved into CLEF's `images` array and
+  replaced with `[image #N]` placeholders.
+- Conservative input budget: request UTF-8 bytes + 1,024 + 128 per alternative
+  must not exceed 24,000. This is an approximation, not the vendor tokenizer.
+- OpenClaw's built-in automatic tool prefilter has a 500 ms budget; a remote call
+  may time out there and fall back as usual. Other agent harnesses do not run the
+  prefilter; whether they expose `decision_evaluate` depends on the harness.
+
+## Testing
+
+```bash
+npm test
+```
+
+Unit tests cover protocol translation, budget accounting and redaction, plus
+provider tests against stubbed host SDK modules. They do not prove that your
+credentials work. End to end: after configuring and restarting the Gateway, call
+the `decision_evaluate` tool once. `status: "ok"` with `answers` means it works;
+`unavailable / credentials-unavailable` usually means the plugin registered
+before the secret existed (see Activation).
+
+## References
 
 - https://developers.cloudflare.com/workers-ai/models/clef-flash/
 - https://developers.cloudflare.com/workers-ai/models/clef/
 - https://developers.cloudflare.com/workers-ai/platform/pricing/
-- OpenClaw 官方文档：docs/concepts/decision-models.md 与 docs/plugins/sdk-overview/capabilities.md
+- OpenClaw docs: `docs/concepts/decision-models.md`, `docs/plugins/sdk-overview/capabilities.md`
